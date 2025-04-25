@@ -1,4 +1,4 @@
-import { BitfinexPublicApi } from '../lib/axios.lib';
+import { BitfinexPrivateApi, BitfinexPublicApi } from '../lib/axios.lib';
 
 /**
  * @description Get funding rates for fUSD and fUSDT
@@ -37,6 +37,38 @@ async function getFundingBooks(symbol: 'fUSD' | 'fUSDT', options?: { len: number
   }
 }
 
+/**
+ * @description Get user's wallet balances
+ * @returns Array of wallet balances with currency, balance, and available amount
+ */
+async function getWalletBalances() {
+  try {
+    const res = await BitfinexPrivateApi.post('/auth/r/wallets', {});
+
+    const metadata: {
+      walletType: 'exchange' | 'margin' | 'funding';
+      currency: string;
+      balance: number;
+      unsettledInterest: number;
+      availableBalance: number;
+    }[] = res.data.map((wallet: [string, string, number, number, number]) => ({
+      walletType: wallet[0], // e.g. 'exchange', 'margin', 'funding'
+      currency: wallet[1], // e.g. 'BTC', 'USD', etc.
+      balance: wallet[2], // total balance
+      unsettledInterest: wallet[3],
+      availableBalance: wallet[4],
+    }));
+
+    return metadata;
+  } catch (error) {
+    console.error('Error fetching wallet balances:', error);
+    throw new Error('Failed to fetch wallet balances');
+  }
+}
+
 // MARK: Export
 
-export const BitfinexService = { getFundingBooks };
+export const BitfinexService = {
+  getFundingBooks,
+  getWalletBalances,
+};
