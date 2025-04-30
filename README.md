@@ -83,6 +83,15 @@ docker run -d --env-file .env --restart unless-stopped bitfinex-funding-bot
 - `DISCORD_WEBHOOK_URL`: Your Discord webhook URL for notifications
 - `BITFINEX_API_KEY`: Your Bitfinex API key
 - `BITFINEX_API_SECRET`: Your Bitfinex API secret
+- `CRON_SCHEDULE`: (Optional) Cron schedule for updates (default: `*/5 * * * *`)
+
+Example cron schedules:
+
+- `*/5 * * * *` - Every 5 minutes (default)
+- `*/15 * * * *` - Every 15 minutes
+- `0 * * * *` - Every hour
+- `0 */2 * * *` - Every 2 hours
+- `0 0 * * *` - Once per day at midnight
 
 ### API Permissions
 
