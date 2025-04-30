@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  bitfinex-bot:
+    build: .
+    container_name: bitfinex-funding-bot
+    restart: unless-stopped
+    env_file:
+      - .env
