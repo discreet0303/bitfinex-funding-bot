@@ -89,7 +89,7 @@ async function postFundingOffer(symbol: 'USDT', amount: number, rate: number, pe
     const body = {
       type: 'LIMIT',
       symbol: formattedSymbol,
-      amount: amount, // 出借金額
+      amount: String(amount), // 出借金額
       rate: formattedRate, // 日利率
       period: period, // 天數
     };
@@ -99,7 +99,7 @@ async function postFundingOffer(symbol: 'USDT', amount: number, rate: number, pe
     const orderStatus = res.data[6];
     const orderRes = res.data[4];
 
-    if (orderRes === 'SUCCESS') {
+    if (orderStatus === 'SUCCESS') {
       return {
         symbol: formattedSymbol,
         amount,
