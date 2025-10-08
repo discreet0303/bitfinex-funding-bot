@@ -5,17 +5,96 @@ import { BitfinexService } from './apis/bitfinex.api';
 
 dotenv.config();
 
+async function checkWalletAvailableBalance() {
+  let walletBalances = await BitfinexService.getWalletBalances();
+  walletBalances = walletBalances.filter(item => item.balance > 150);
+
+  if (walletBalances.length === 0) return [];
+  return walletBalances;
+}
+
+async function pickFundingRate(symbol: 'USD' | 'USDT') {
+  const fundingBooks = await BitfinexService.getFundingBooks(symbol);
+  if (fundingBooks.length === 0) return null;
+
+  const groupedByPeriod = fundingBooks.reduce(
+    (acc, offer) => {
+      if (!acc[offer.period]) {
+        acc[offer.period] = offer;
+      } else if (offer.yearlyRate > acc[offer.period].yearlyRate) {
+        acc[offer.period] = offer;
+      }
+      return acc;
+    },
+    {} as { [key: number]: (typeof fundingBooks)[0] },
+  );
+
+  // First priority: 120 days with annual rate >= 10%
+  const funding120 = groupedByPeriod[120];
+  if (funding120 && funding120.yearlyRate >= 10) {
+    return { rate: funding120.dailyRate, period: 120, availableAmount: funding120.amount };
+  }
+
+  // // Last priority: 2 days
+  // const funding2 = groupedByPeriod[2];
+  // if (funding2) {
+  //   return { rate: funding2.dailyRate, period: 2, availableAmount: funding2.amount };
+  // }
+
+  return null;
+}
+
 async function main() {
-  const walletBalances = await BitfinexService.getWalletBalances();
+  const walletBalances = await checkWalletAvailableBalance();
 
-  const title = 'Bitfinex Wallet Balances';
-  const content = walletBalances
-    .map(item => {
-      return `- ${item.walletType}: ${item.currency} ${item.availableBalance}`;
-    })
-    .join('\n');
+  if (walletBalances.length === 0) return;
 
-  await DiscordService.sendMessage(title, content);
+  for (const wallet of walletBalances) {
+    if (wallet.availableBalance <= 150) return;
+
+    const walletMsg: string = `- ${wallet.walletType}: ${wallet.currency} ${wallet.balance} (Available: ${wallet.availableBalance})`;
+
+    await DiscordService.sendMessage('Wallet balance', walletMsg);
+
+    if (wallet.currency === 'UST') {
+      const fundingRate = await pickFundingRate('USDT');
+
+      if (!fundingRate || wallet.availableBalance > fundingRate.availableAmount) return;
+
+      const amountToOffer = wallet.availableBalance <= 300 ? wallet.availableBalance : 300;
+
+      await DiscordService.sendMessage(
+        'Bitfinex Funding Offer',
+        [
+          `- Funding Offer Posted:`,
+          `  - Symbol: USDT`,
+          `  - Amount: ${amountToOffer}`,
+          `  - Rate: ${fundingRate.rate}`,
+          `  - Period: ${fundingRate.period}`,
+        ].join('\n'),
+      );
+
+      // const fundingOffer = await BitfinexService.postFundingOffer(
+      //   'USDT',
+      //   amountToOffer,
+      //   fundingRate.rate,
+      //   fundingRate.period,
+      // );
+
+      // if (fundingOffer) {
+      //   const title = 'Bitfinex Funding Offer';
+      //   const contents = [
+      //     `- Funding Offer Posted:`,
+      //     `  - Symbol: USDT`,
+      //     `  - Amount: ${amountToOffer}`,
+      //     `  - Rate: ${fundingRate.rate}`,
+      //     `  - Period: ${fundingOffer?.period}`,
+      //   ];
+
+      //   await DiscordService.sendMessage(title, contents.join('\n'));
+      // }
+    }
+  }
 }
 
 // Get cron schedule from environment variables, default to every 5 minutes
