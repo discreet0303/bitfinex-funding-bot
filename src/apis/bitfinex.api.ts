@@ -76,7 +76,7 @@ async function getWalletBalances() {
   }
 }
 
-async function postFundingOffer(symbol: 'USDT', amount: number, rate: number, period: number) {
+async function postFundingOffer(symbol: 'USDT' | 'USD', amount: number, rate: number, period: number) {
   if (amount < 150) {
     console.warn('The amount is less than 150, skipping funding offer.');
     return;

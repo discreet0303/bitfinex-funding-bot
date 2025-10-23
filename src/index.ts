@@ -71,32 +71,40 @@ async function main() {
 
     await DiscordService.sendMessage('Wallet balance', walletMsg);
 
+    let symbol: 'USD' | 'USDT' | undefined = undefined;
+
     if (wallet.currency === 'UST') {
-      const fundingRate = await pickFundingRate('USDT');
+      symbol = 'USDT';
+    } else if (wallet.currency === 'USD') {
+      symbol = 'USD';
+    }
 
-      if (!fundingRate || wallet.availableBalance > Math.abs(fundingRate.availableAmount)) continue;
+    if (symbol === undefined) continue;
 
-      const amountToOffer = wallet.availableBalance <= 300 ? wallet.availableBalance : 300;
+    const fundingRate = await pickFundingRate(symbol);
 
-      const fundingOffer = await BitfinexService.postFundingOffer(
-        'USDT',
-        amountToOffer,
-        fundingRate.rate,
-        fundingRate.period,
-      );
+    if (!fundingRate || wallet.availableBalance > Math.abs(fundingRate.availableAmount)) continue;
 
-      if (fundingOffer) {
-        const title = 'Bitfinex Funding Offer';
-        const contents = [
-          `- Funding Offer Posted:`,
-          `  - Symbol: USDT`,
-          `  - Amount: ${amountToOffer}`,
-          `  - Rate: ${fundingRate.rate}`,
-          `  - Period: ${fundingOffer?.period}`,
-        ];
+    const amountToOffer = wallet.availableBalance <= 300 ? wallet.availableBalance : 300;
 
-        await DiscordService.sendMessage(title, contents.join('\n'));
-      }
+    const fundingOffer = await BitfinexService.postFundingOffer(
+      symbol,
+      amountToOffer,
+      fundingRate.rate,
+      fundingRate.period,
+    );
+
+    if (fundingOffer) {
+      const title = 'Bitfinex Funding Offer';
+      const contents = [
+        `- Funding Offer Posted:`,
+        `  - Symbol: ${symbol}`,
+        `  - Amount: ${amountToOffer}`,
+        `  - Rate: ${fundingRate.rate}`,
+        `  - Period: ${fundingOffer?.period}`,
+      ];
+
+      await DiscordService.sendMessage(title, contents.join('\n'));
     }
   }
 }
