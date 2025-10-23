@@ -29,8 +29,19 @@ async function pickFundingRate(symbol: 'USD' | 'USDT') {
     {} as { [key: number]: (typeof fundingBooks)[0] },
   );
 
-  // First priority: 120 days with annual rate >= 10%
+  const funding2 = groupedByPeriod[2];
   const funding120 = groupedByPeriod[120];
+
+  // First priority: 2 days with annual rate >= 9%
+  if (funding2 && funding2.yearlyRate >= 9) {
+    return {
+      rate: Number(funding2.dailyRate.toFixed(6)),
+      period: 2,
+      availableAmount: funding2.amount,
+    };
+  }
+
+  // Second priority: 120 days with annual rate >= 10%
   if (funding120 && funding120.yearlyRate >= 10) {
     return {
       rate: Number(funding120.dailyRate.toFixed(6)),
