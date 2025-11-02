@@ -5,17 +5,33 @@ import { BitfinexService } from './apis/bitfinex.api';
 
 dotenv.config();
 
+const MIN_BALANCE = 150;
+const MAX_OFFER_AMOUNT = 300;
+
 async function checkWalletAvailableBalance() {
+  console.log('檢查錢包餘額...');
   let walletBalances = await BitfinexService.getWalletBalances();
-  walletBalances = walletBalances.filter(item => item.balance > 150);
+  console.log(`取得 ${walletBalances.length} 個錢包`);
+  
+  walletBalances = walletBalances.filter(item => item.balance >= MIN_BALANCE);
+  console.log(`過濾後有 ${walletBalances.length} 個錢包餘額 >= ${MIN_BALANCE}`);
 
   if (walletBalances.length === 0) return [];
   return walletBalances;
 }
 
-async function pickFundingRate(symbol: 'USD' | 'USDT') {
+async function pickFundingRate(symbol: 'USD' | 'USDT', amount: number) {
+  console.log(`[${symbol}] 挑選 funding rate，金額: ${amount}`);
+  
+  if (amount < MIN_BALANCE) {
+    console.log(`[${symbol}] 金額小於 ${MIN_BALANCE}，跳過`);
+    return [];
+  }
+
   const fundingBooks = await BitfinexService.getFundingBooks(symbol);
-  if (fundingBooks.length === 0) return null;
+  console.log(`[${symbol}] 取得 ${fundingBooks.length} 筆 funding book 資料`);
+  
+  if (fundingBooks.length === 0) return [];
 
   const groupedByPeriod = fundingBooks.reduce(
     (acc, offer) => {
@@ -29,43 +45,68 @@ async function pickFundingRate(symbol: 'USD' | 'USDT') {
     {} as { [key: number]: (typeof fundingBooks)[0] },
   );
 
+  let fundingRate: {rate: number, period: number} | undefined = undefined;
+
   const funding2 = groupedByPeriod[2];
   const funding120 = groupedByPeriod[120];
 
-  // First priority: 2 days with annual rate >= 9%
   if (funding2 && funding2.yearlyRate >= 9) {
-    return {
+    // First priority: 2 days with annual rate >= 9%
+    fundingRate = {
       rate: Number(funding2.dailyRate.toFixed(6)),
       period: 2,
-      availableAmount: funding2.amount,
-    };
+    }
+    console.log(`[${symbol}] 選擇 2 天期，年化率: ${funding2.yearlyRate.toFixed(2)}%, 日利率: ${fundingRate.rate}%`);
   }
-
-  // Second priority: 120 days with annual rate >= 10%
-  if (funding120 && funding120.yearlyRate >= 10) {
-    return {
+  else if (funding120 && funding120.yearlyRate >= 10) {
+    // Second priority: 120 days with annual rate >= 10%
+    fundingRate = {
       rate: Number(funding120.dailyRate.toFixed(6)),
       period: 120,
-      availableAmount: funding120.amount,
-    };
+    }
+    console.log(`[${symbol}] 選擇 120 天期，年化率: ${funding120.yearlyRate.toFixed(2)}%, 日利率: ${fundingRate.rate}%`);
   }
 
-  // // Last priority: 2 days
-  // const funding2 = groupedByPeriod[2];
-  // if (funding2) {
-  //   return { rate: funding2.dailyRate, period: 2, availableAmount: funding2.amount };
-  // }
+  // If no suitable funding rate found, return empty array
+  if (!fundingRate) {
+    console.log(`[${symbol}] 未找到符合條件的 funding rate`);
+    return [];
+  }
 
-  return null;
+  // Split amount into chunks of MAX_OFFER_AMOUNT and create offer objects
+  const offers: Array<{amount: number, rate: number, period: number}> = [];
+  let remainingAmount = amount;
+
+  while (remainingAmount >= MIN_BALANCE) {
+    const offerAmount = Math.min(remainingAmount, MAX_OFFER_AMOUNT);
+    offers.push({
+      amount: offerAmount,
+      rate: fundingRate.rate,
+      period: fundingRate.period,
+    });
+    remainingAmount -= offerAmount;
+  }
+
+  console.log(`[${symbol}] 產生 ${offers.length} 筆 offer，總金額: ${amount}`);
+  return offers;
 }
 
 async function main() {
+  console.log('=== 開始執行 funding bot ===');
   const walletBalances = await checkWalletAvailableBalance();
 
-  if (walletBalances.length === 0) return;
+  if (walletBalances.length === 0) {
+    console.log('沒有符合條件的錢包，結束執行');
+    return;
+  }
 
   for (const wallet of walletBalances) {
-    if (wallet.availableBalance <= 150) continue;
+    console.log(`\n處理錢包: ${wallet.walletType} ${wallet.currency}`);
+    
+    if (wallet.availableBalance < MIN_BALANCE) {
+      console.log(`可用餘額 ${wallet.availableBalance} < ${MIN_BALANCE}，跳過`);
+      continue;
+    }
 
     const walletMsg: string = `- ${wallet.walletType}: ${wallet.currency} ${wallet.balance} (Available: ${wallet.availableBalance})`;
 
@@ -79,34 +120,46 @@ async function main() {
       symbol = 'USD';
     }
 
-    if (symbol === undefined) continue;
+    if (symbol === undefined) {
+      console.log(`不支援的貨幣: ${wallet.currency}`);
+      continue;
+    }
 
-    const fundingRate = await pickFundingRate(symbol);
+    const fundingOffers = await pickFundingRate(symbol, wallet.availableBalance);
 
-    if (!fundingRate || wallet.availableBalance > Math.abs(fundingRate.availableAmount)) continue;
+    if (fundingOffers.length === 0) {
+      console.log(`[${symbol}] 沒有可用的 funding offer`);
+      continue;
+    }
 
-    const amountToOffer = wallet.availableBalance <= 300 ? wallet.availableBalance : 300;
+    console.log(`[${symbol}] 開始提交 ${fundingOffers.length} 筆 funding offer`);
+    
+    for (const offer of fundingOffers) {
+      console.log(`提交 offer: ${offer.amount} @ ${offer.rate}% / ${offer.period} 天`);
+      
+      const fundingOffer = await BitfinexService.postFundingOffer(
+        symbol,
+        offer.amount,
+        offer.rate,
+        offer.period,
+      );
 
-    const fundingOffer = await BitfinexService.postFundingOffer(
-      symbol,
-      amountToOffer,
-      fundingRate.rate,
-      fundingRate.period,
-    );
+      if (fundingOffer) {
+        console.log(`✓ Offer 提交成功: ${offer.amount} @ ${offer.rate}% / ${fundingOffer.period} 天`);
+        
+        const title = 'Bitfinex Funding Offer';
+        const contents = [
+          `[${symbol}] $${offer.amount} - ${offer.rate} / ${fundingOffer?.period} days`,
+        ];
 
-    if (fundingOffer) {
-      const title = 'Bitfinex Funding Offer';
-      const contents = [
-        `- Funding Offer Posted:`,
-        `  - Symbol: ${symbol}`,
-        `  - Amount: ${amountToOffer}`,
-        `  - Rate: ${fundingRate.rate}`,
-        `  - Period: ${fundingOffer?.period}`,
-      ];
-
-      await DiscordService.sendMessage(title, contents.join('\n'));
+        await DiscordService.sendMessage(title, contents.join('\n'));
+      } else {
+        console.log(`✗ Offer 提交失敗`);
+      }
     }
   }
+  
+  console.log('\n=== Funding bot 執行完成 ===');
 }
 
 // Get cron schedule from environment variables, default to every 5 minutes
