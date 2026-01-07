@@ -6,7 +6,7 @@ import { BitfinexService } from './apis/bitfinex.api';
 dotenv.config();
 
 const MIN_BALANCE = 150;
-const MAX_OFFER_AMOUNT = 300;
+const MAX_OFFER_AMOUNT = Number(process.env.DEFAULT_OFFER_AMOUNT) || 300;
 
 async function checkWalletAvailableBalance() {
   console.log('檢查錢包餘額...');
