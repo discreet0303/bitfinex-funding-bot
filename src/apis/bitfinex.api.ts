@@ -33,7 +33,7 @@ async function getFundingBooks(symbol: 'USD' | 'USDT', options?: { len: number }
     }[] = res.data
       .filter((item: [number, number, number, number]) => item[3] < 0)
       .map((item: [number, number, number, number]) => ({
-        dailyRate: item[0] * 100,
+        dailyRate: new BigNumber(item[0]).multipliedBy(100).dp(6, BigNumber.ROUND_DOWN).toNumber(),
         yearlyRate: new BigNumber(item[0]).multipliedBy(365 * 100).toNumber(),
         period: item[1],
         count: item[2],
@@ -76,7 +76,12 @@ async function getWalletBalances() {
   }
 }
 
-async function postFundingOffer(symbol: 'USDT' | 'USD', amount: number, rate: number, period: number) {
+async function postFundingOffer(
+  symbol: 'USDT' | 'USD',
+  amount: number,
+  rate: number,
+  period: number,
+) {
   if (amount < 150) {
     console.warn('The amount is less than 150, skipping funding offer.');
     return;
